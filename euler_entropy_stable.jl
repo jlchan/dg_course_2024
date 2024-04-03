@@ -4,13 +4,13 @@ using Plots
 using LinearAlgebra, SparseArrays
 using Trixi
 
-N = 1
+N = 0
 rd = RefElemData(Line(), SBP(), N)
-md = MeshData(uniform_mesh(Line(), 512), rd; is_periodic = true)
+md = MeshData(uniform_mesh(Line(), 1024), rd; is_periodic = true)
 
 x = md.x
 Q = rd.M * rd.Dr
-Qskew = 0.5 * (Q - Q')
+Qskew = (Q - Q')
 ETr = spzeros(N+1, 2)
 ETr[1,1] = 1 
 ETr[end, end] = 1
@@ -22,9 +22,9 @@ equations = CompressibleEulerEquations1D(1.4)
 
 function initial_condition(x, equations::CompressibleEulerEquations1D)
     (; gamma) = equations
-    rho = .01 + (abs(x) < 0.4)
+    rho = 1e-10 + 1e3 * (abs(x) < 0.4)
     v1 = 0.0
-    p = rho^gamma
+    p = rho^gamma + (abs(x) < 0.4)
     return SVector(rho, v1, p)
 end
 
@@ -47,7 +47,7 @@ function rhs!(du, u, params, t)
             u_i = u[i,e]
             for j in axes(u, 1)
                 u_j = u[j,e]
-                du[i, e] += 2 * Qskew[i,j] * fEC(u_i, u_j)
+                du[i, e] += Qskew[i,j] * fEC(u_i, u_j)
             end
         end
     end    
@@ -56,18 +56,14 @@ end
 tspan = (0.0, .2)
 ode = ODEProblem(rhs!, u0, tspan, (; Qskew, ETr, rd, md, equations))
 sol = solve(ode, SSPRK43(), abstol=1e-9, reltol=1e-6,
-            saveat = LinRange(tspan..., 100), 
+            saveat = LinRange(tspan..., 50), 
             callback=AliveCallback(alive_interval=100))
 
-# @gif for u in sol.u
-#     scatter(x, getindex.(u, 1), leg=false, ylims=extrema(getindex.(u0, 1)) .+ (-.1, .1))
-# end
-
-@gif for u in [sol.u[end]]
-    # scatter(x, getindex.(u, 1), leg=false, ylims=extrema(getindex.(u0, 1)) .+ (-.1, .1))
-    q = cons2prim.(u, equations)
-    u_plus_c = @. getindex(q, 2) + sqrt(equations.gamma * getindex(q,3) / getindex(q,1)) # u + sqrt(gamma * p / rho)
-    u_minus_c = @. getindex(q, 2) - sqrt(equations.gamma * getindex(q,3) / getindex(q,1)) # u + sqrt(gamma * p / rho)
-    scatter(x, getindex.(u_plus_c, 1), leg=false)
-    scatter!(x, getindex.(u_minus_c, 1), leg=false)
+@gif for u in sol.u
+    scatter(x, getindex.(u, 1), leg=false, ylims=extrema(getindex.(u0, 1)) .+ (-.1, .1))
+    # q = cons2prim.(u, equations)
+    # u_plus_c = @. getindex(q, 2) + sqrt(equations.gamma * getindex(q,3) / getindex(q,1)) # u + sqrt(gamma * p / rho)
+    # u_minus_c = @. getindex(q, 2) - sqrt(equations.gamma * getindex(q,3) / getindex(q,1)) # u + sqrt(gamma * p / rho)
+    # scatter(x, getindex.(u_plus_c, 1), leg=false)
+    # scatter!(x, getindex.(u_minus_c, 1), leg=false)
 end

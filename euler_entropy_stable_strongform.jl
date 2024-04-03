@@ -22,7 +22,7 @@ equations = CompressibleEulerEquations1D(1.4)
 
 function initial_condition(x, equations::CompressibleEulerEquations1D)
     (; gamma) = equations
-    rho = 1 + .5 * exp(-10 * x^2)
+    rho = 1 + (abs(x) < .4) 
     v1 = 0.0
     p = rho^gamma
     return SVector(rho, v1, p)
@@ -31,6 +31,7 @@ end
 u0 = prim2cons.(initial_condition.(x, equations), equations)
 f(u) = flux(u, 1, CompressibleEulerEquations1D(1.4))
 fEC(u_i, u_j) = flux_ranocha(u_i, u_j, 1, CompressibleEulerEquations1D(1.4))
+fEC(u_i, u_j) = flux_central(u_i, u_j, 1, CompressibleEulerEquations1D(1.4))
 lambda(uM, uP) = max_abs_speed_naive(uM, uP, 1, CompressibleEulerEquations1D(1.4))
 
 function rhs!(du, u, params, t)

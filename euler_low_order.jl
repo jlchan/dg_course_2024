@@ -5,12 +5,12 @@ using LinearAlgebra, SparseArrays
 
 N = 3
 rd = RefElemData(Line(), SBP(), N)
-md = MeshData(uniform_mesh(Line(), 32), rd; is_periodic = true)
+md = MeshData(uniform_mesh(Line(), 512), rd; is_periodic = true)
 
 x = md.x
 Q = rd.M * rd.Dr
-Qskew = 0.5 * (Q - Q')
-Qskew = 0.5 * spdiagm(-1 => -ones(rd.N), 1 => ones(rd.N))
+Qskew = (Q - Q')
+Qskew = diagm(-1 => -ones(N), 1 => ones(N))
 ETr = spzeros(N+1, 2)
 ETr[1,1] = 1 
 ETr[end, end] = 1
@@ -22,7 +22,7 @@ equations = CompressibleEulerEquations1D(1.4)
 
 function initial_condition(x, equations::CompressibleEulerEquations1D)
     (; gamma) = equations
-    rho = .01 + (abs(x) < 0.4) 
+    rho = .01 + (abs(x) < 0.4)
     v1 = 0.0
     p = rho^gamma
     return SVector(rho, v1, p)
@@ -42,18 +42,30 @@ function rhs!(du, u, params, t)
     uP = uM[md.mapP]
     du .= ETr * (@. 0.5 * (f(uM) + f(uP)) * md.nx - 0.5 * lambda(uM, uP) * (uP - uM))
 
+    du_high = similar(du[:,1])
+    du_low = similar(du[:,1])
     for e in axes(u, 2)
+
+        du_high .= 0
+        du_low .= 0
+        
         for i in axes(u, 1)
             u_i = u[i,e]
             for j in axes(u, 1)
                 u_j = u[j,e]
-                Q_ij = Qskew[i,j]
-                if abs(Q_ij) > 100 * eps()
-                    n_ij = Q_ij / abs(Q_ij)
-                    #du[i, e] += 2 * Qskew[i,j] * fEC(u_i, u_j)
-                    # du[i, e] += 2 * Q_ij * 0.5 * (f(u_i) + f(u_j)) - 
-                    #     abs(Q_ij) * lambda(u_i, u_j) * (u_j - u_i)
-                    du[i, e] += 2 * abs(Q_ij) * flux_lax_friedrichs(u_i, u_j, SVector(n_ij), CompressibleEulerEquations1D(1.4))
+                du_high[i] += Qskew[i,j] * fEC(u_i, u_j)
+            end
+        end
+
+        for i in axes(u, 1)
+            u_i = u[i,e]
+            for j in axes(u, 1)
+                u_j = u[j,e]
+                S_ij = Qskew[i,j]
+                if abs(S_ij) > 100 * eps()
+                    n_ij = S_ij / abs(S_ij)
+                    du_low[i] += abs(S_ij) * flux_lax_friedrichs(u_i, u_j, SVector(n_ij), 
+                                                                CompressibleEulerEquations1D(1.4))
                 end
             end
         end
@@ -62,7 +74,7 @@ function rhs!(du, u, params, t)
 end
 tspan = (0.0, .20)
 ode = ODEProblem(rhs!, u0, tspan, (; Qskew, ETr, rd, md))
-sol = solve(ode, SSPRK43(), abstol=1e-8, reltol=1e-5, 
+sol = solve(ode, SSPRK43(), abstol=1e-9, reltol=1e-6, 
             callback=AliveCallback(alive_interval=100),
             saveat = LinRange(tspan..., 50))
 
