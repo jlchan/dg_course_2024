@@ -5,7 +5,7 @@ using LinearAlgebra, SparseArrays
 
 N = 3
 rd = RefElemData(Line(), SBP(), N)
-md = MeshData(uniform_mesh(Line(), 512), rd; is_periodic = true)
+md = MeshData(uniform_mesh(Line(), 128), rd; is_periodic = true)
 
 x = md.x
 Q = rd.M * rd.Dr
@@ -46,8 +46,8 @@ function rhs!(du, u, params, t)
     du_low = similar(du[:,1])
     for e in axes(u, 2)
 
-        du_high .= 0
-        du_low .= 0
+        fill!(du_high, zero(eltype(du)))
+        fill!(du_low, zero(eltype(du)))
 
         for i in axes(u, 1)
             u_i = u[i,e]
@@ -64,7 +64,11 @@ function rhs!(du, u, params, t)
             end
         end
 
-        @. du[:, e] .= .9 * du_high + .1 * du_low
+        θ = .99
+        # if minimum(getindex.(u[:, e], 1)) < .001
+        #     θ = 0
+        # end
+        @. du[:, e] .+= θ * du_high + (1 - θ) * du_low
     end    
     du .= -rd.M \ (du ./ md.J)
 end
@@ -74,6 +78,8 @@ sol = solve(ode, SSPRK43(), abstol=1e-9, reltol=1e-6,
             callback=AliveCallback(alive_interval=100),
             saveat = LinRange(tspan..., 50))
 
-@gif for u in sol.u
-    scatter(x, getindex.(u, 1), leg=false, ylims=extrema(getindex.(u0, 1)) .+ (-.1, .1))
-end
+u = sol.u[end]            
+scatter(x, getindex.(u, 1), leg=false)
+# @gif for u in sol.u
+#     scatter(x, getindex.(u, 1), leg=false, ylims=extrema(getindex.(u0, 1)) .+ (-.1, .1))
+# end
